@@ -148,13 +148,7 @@ class SemanticSearch:
         return result
 
 
-@st.cache_resource
-def get_unified_search_index(_festivals, _art_forms, _cuisines, _monuments):
-    """
-    Builds ONE combined TF-IDF search index across festivals, art forms,
-    cuisines, and monuments, tagging each row with its source category so
-    a single search box can surface results from every dataset at once.
-    """
+def build_combined_corpus(_festivals, _art_forms, _cuisines, _monuments):
     frames = []
 
     f = _festivals.rename(columns={"festival": "name", "description": "text"})[["name", "state", "text"]]
@@ -173,6 +167,11 @@ def get_unified_search_index(_festivals, _art_forms, _cuisines, _monuments):
     m["category"] = "Monument"
     frames.append(m)
 
-    combined = pd.concat(frames, ignore_index=True)
+    return pd.concat(frames, ignore_index=True)
+
+
+@st.cache_resource
+def get_unified_search_index(_festivals, _art_forms, _cuisines, _monuments):
+    combined = build_combined_corpus(_festivals, _art_forms, _cuisines, _monuments)
     engine = SemanticSearch(df=combined, text_col="text", label_col="name")
     return engine

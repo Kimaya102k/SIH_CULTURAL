@@ -10,9 +10,6 @@ combined with small, genuinely-working AI/ML & data-science components:
   - A TF-IDF semantic search engine across the whole heritage corpus
 
 Stack: Python + Streamlit + pandas/numpy + scikit-learn + Plotly.
-No external APIs, images, or internet calls are used — everything is
-self-contained so the prototype runs anywhere `pip install -r
-requirements.txt` works.
 """
 
 import numpy as np
@@ -34,6 +31,10 @@ from utils.ml_models import (
     get_unified_search_index,
     recommend_states,
 )
+from utils.deep_search import build_deep_index, deep_search
+from utils.translator import translate, LANGUAGE_MODELS
+from utils.heritage_game import render_heritage_matrix
+import streamlit.components.v1 as components
 
 # ----------------------------------------------------------------------------
 # Page configuration & light theming
@@ -120,6 +121,8 @@ PAGES = [
     "🧠 AI Culture Match",
     "📊 Cultural Clustering",
     "🔎 Smart Search",
+    "🌐 Translate",
+    "🎮 Heritage Matrix",
     "ℹ️ About",
 ]
 page = st.sidebar.radio("Navigate", PAGES, label_visibility="collapsed")
@@ -560,22 +563,24 @@ elif page == "📊 Cultural Clustering":
     )
 
 # ============================================================================
-# PAGE: SMART SEARCH  (TF-IDF semantic-ish search)
+# PAGE: SMART SEARCH  (TF-IDF + Deep Semantic search)
 # ============================================================================
 elif page == "🔎 Smart Search":
     hero(
         "Smart Heritage Search",
-        "A TF-IDF powered search engine across every festival, art form, dish and monument.",
+        "A search engine across every festival, art form, dish and monument — with a keyword and a neural mode.",
     )
 
     st.markdown(
         "**How it works:** all text descriptions across the four datasets are "
-        "vectorised with **TF-IDF** (Term Frequency–Inverse Document Frequency), "
-        "and your query is compared against every entry using **cosine similarity** — "
-        "a lightweight, fully offline approximation of semantic search."
+        "vectorised with **TF-IDF** (Term Frequency–Inverse Document Frequency) for "
+        "the keyword mode, or with **neural sentence embeddings** for the deep semantic "
+        "mode, and your query is compared against every entry using **cosine similarity**."
     )
 
     engine = get_unified_search_index(festivals_df, art_forms_df, cuisines_df, monuments_df)
+
+    mode = st.radio("Search mode", ["Keyword (TF-IDF)", "Deep Semantic (Neural)"], horizontal=True)
 
     query = st.text_input(
         "Search anything — e.g. 'peacock dance', 'coconut curry', 'Mughal marble tomb', 'harvest festival'"
@@ -583,7 +588,11 @@ elif page == "🔎 Smart Search":
     top_n = st.slider("Number of results", 3, 15, 6)
 
     if query:
-        results = engine.search(query, top_n=top_n)
+        if mode == "Keyword (TF-IDF)":
+            results = engine.search(query, top_n=top_n)
+        else:
+            combined, model, embeddings = build_deep_index(festivals_df, art_forms_df, cuisines_df, monuments_df)
+            results = deep_search(query, combined, model, embeddings, top_n=top_n)
         if results.empty:
             st.warning("No relevant matches found — try a different or broader keyword.")
         else:
@@ -596,6 +605,37 @@ elif page == "🔎 Smart Search":
                 )
     else:
         st.info("Type a query above to search across festivals, art forms, cuisines and monuments at once.")
+
+# ============================================================================
+# PAGE: TRANSLATE
+# ============================================================================
+elif page == "🌐 Translate":
+    hero(
+        "Multi-Lingual Heritage Translator",
+        "Read any festival or art form description in your language — powered by tiny offline MarianMT models.",
+    )
+
+    source_options = {
+        **dict(zip(festivals_df["festival"], festivals_df["description"])),
+        **dict(zip(art_forms_df["name"], art_forms_df["description"])),
+    }
+    pick = st.selectbox("Pick a heritage item", list(source_options.keys()))
+    st.write("**English:**", source_options[pick])
+
+    lang = st.selectbox("Translate to", list(LANGUAGE_MODELS.keys()))
+    if st.button("Translate"):
+        with st.spinner("Translating... (first run downloads the model, may take a minute)"):
+            st.success(translate(source_options[pick], lang))
+
+# ============================================================================
+# PAGE: HERITAGE MATRIX (game)
+# ============================================================================
+elif page == "🎮 Heritage Matrix":
+    hero("Heritage Matrix", "Match 3 cultural icons in a row to unlock real heritage facts!")
+    facts = festivals_df["description"].tolist() + art_forms_df["description"].tolist()
+    game_html = render_heritage_matrix(facts)
+    components.html(game_html, height=640, scrolling=False)
+    st.caption("Every 50 points unlocks a new fact pulled straight from your heritage dataset.")
 
 # ============================================================================
 # PAGE: ABOUT
@@ -618,7 +658,9 @@ heritage explorer for India.
     - `OneHotEncoding` (via `pandas.get_dummies`) to featurise categorical culture attributes
     - **Cosine similarity** content-based recommender (`🧠 AI Culture Match`)
     - **KMeans clustering + PCA** for unsupervised grouping of states (`📊 Cultural Clustering`)
-    - **TF-IDF vectorisation + cosine similarity** for search (`🔎 Smart Search`)
+    - **TF-IDF + neural embeddings** for search (`🔎 Smart Search`)
+- **Transformers (MarianMT)** — offline translation (`🌐 Translate`)
+- **Sentence-Transformers** — deep semantic search
 - **Plotly Express** — all charts and the interactive map
 
 ### Data
@@ -630,10 +672,10 @@ up automatically (thanks to `st.cache_data`).
 
 ### Extending this prototype
 - Add more states/rows to the CSVs for fuller coverage.
-- Swap TF-IDF for sentence embeddings for true semantic search.
+- Add real images + CLIP for true visual semantic matching.
 - Add a time-series page (e.g. tourism trends) if such data is available.
 - Wire in real geo-boundaries (GeoJSON) for a choropleth instead of scatter points.
 
-*Built as a self-contained prototype — no external APIs or internet access required.*
+*Built as a self-contained prototype.*
         """
     )
